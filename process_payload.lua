@@ -1,1 +1,0 @@
-return 'Hello, ' .. payload.name .. '!'
