@@ -89,6 +89,59 @@ func runLuaScript(filename string, jsonData map[string]interface{}) (string, err
 	L := lua.NewState()
 	defer L.Close()
 
+	// Create and register functions for Lua scripts to use.
+	L.SetGlobal("setHeader", L.NewFunction(func(L *lua.LState) int {
+		// Create new header
+		key := L.CheckString(1)
+		value := L.CheckString(2)
+
+		// Store header in Lua's global table
+		headers := L.GetGlobal("headers").(*lua.LTable)
+		headers.RawSetString(key, lua.LString(value))
+		return 0 // Number of return values
+	}))
+
+	L.SetGlobal("httpGet", L.NewFunction(func(L *lua.LState) int {
+		url := L.CheckString(1)
+		client := &http.Client{}
+
+		// Retrieve headers from Lua's global table
+		headers := L.GetGlobal("headers").(*lua.LTable)
+
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			L.Push(lua.LNil)
+			L.Push(lua.LString("Failed to create request: " + err.Error()))
+			return 2 // Number of return values
+		}
+
+		// Set headers in request
+		headers.ForEach(func(key lua.LValue, value lua.LValue) {
+			req.Header.Set(key.String(), value.String())
+		})
+
+		resp, err := client.Do(req)
+		if err != nil {
+			L.Push(lua.LNil)
+			L.Push(lua.LString("Failed to do request: " + err.Error()))
+			return 2 // Number of return values
+		}
+		defer resp.Body.Close()
+
+		bodyBytes, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			L.Push(lua.LNil)
+			L.Push(lua.LString("Failed to read response body: " + err.Error()))
+			return 2 // Number of return values
+		}
+
+		L.Push(lua.LString(string(bodyBytes)))
+		return 1 // Number of return values
+	}))
+
+	// Initialize headers table
+	L.SetGlobal("headers", L.NewTable())
+
 	// Register custom Go function that can be called from Lua
 	L.SetGlobal("customGoFunction", L.NewFunction(func(L *lua.LState) int {
 		// Get argument from Lua
