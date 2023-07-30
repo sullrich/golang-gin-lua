@@ -97,8 +97,8 @@ func runLuaScript(filename string, jsonData map[string]interface{}) (string, err
 
 		// Convert lua table to map
 		var bodyMap map[string]interface{}
-		L.ForEach(body, func(i int, k lua.LValue, v lua.LValue) {
-			bodyMap[lua.LVAsString(k)] = lua.LVAsString(v)
+		body.ForEach(func(k lua.LValue, v lua.LValue) {
+			bodyMap[k.String()] = v.String()
 		})
 
 		// Convert map to json
