@@ -24,13 +24,4 @@ end
 -- Set a random header
 setHeader("X-Custom-Header", "TestValue")
 
--- Perform a GET request
-local url = "http://httpbin.org/get"
-local response, error = httpGet(url)
-if error then
-    print("HTTP request failed: " .. error)
-else
-    print("HTTP response: " .. response)
-end
-
 return "Hello, " .. name .. "!"
