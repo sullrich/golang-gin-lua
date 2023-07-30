@@ -1,16 +1,16 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
-	"net/http"
-
 	"github.com/gin-gonic/contrib/static"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/yuin/gopher-lua"
 	"golang.org/x/time/rate"
-
 	"io/ioutil"
+	"net/http"
 	"path/filepath"
 	"sync"
 )
@@ -88,6 +88,59 @@ func runLuaScript(filename string, jsonData map[string]interface{}) (string, err
 	// New lua state
 	L := lua.NewState()
 	defer L.Close()
+
+	// Register httpPost Go function that can be called from Lua
+	L.SetGlobal("httpPost", L.NewFunction(func(L *lua.LState) int {
+		// Get arguments from Lua
+		url := L.CheckString(1)
+		body := L.CheckTable(2)
+
+		// Convert lua table to map
+		var bodyMap map[string]interface{}
+		L.ForEach(body, func(i int, k lua.LValue, v lua.LValue) {
+			bodyMap[lua.LVAsString(k)] = lua.LVAsString(v)
+		})
+
+		// Convert map to json
+		bodyJson, err := json.Marshal(bodyMap)
+		if err != nil {
+			L.Push(lua.LNil)
+			L.Push(lua.LString("Failed to convert body to JSON: " + err.Error()))
+			return 2
+		}
+
+		// Create a new http client
+		client := &http.Client{}
+
+		// Create the request
+		req, err := http.NewRequest("POST", url, bytes.NewBuffer(bodyJson))
+		if err != nil {
+			L.Push(lua.LNil)
+			L.Push(lua.LString("Failed to create request: " + err.Error()))
+			return 2
+		}
+
+		// Send the request
+		resp, err := client.Do(req)
+		if err != nil {
+			L.Push(lua.LNil)
+			L.Push(lua.LString("Failed to send request: " + err.Error()))
+			return 2
+		}
+		defer resp.Body.Close()
+
+		// Read the response
+		responseData, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			L.Push(lua.LNil)
+			L.Push(lua.LString("Failed to read response: " + err.Error()))
+			return 2
+		}
+
+		// Return response to Lua
+		L.Push(lua.LString(string(responseData)))
+		return 1 // Number of return values
+	}))
 
 	// Create and register functions for Lua scripts to use.
 	L.SetGlobal("setHeader", L.NewFunction(func(L *lua.LState) int {
