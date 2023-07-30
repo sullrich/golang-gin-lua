@@ -10,9 +10,11 @@ import (
 	"github.com/yuin/gopher-lua"
 	"golang.org/x/time/rate"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"path/filepath"
 	"sync"
+	"time"
 )
 
 type ScriptStatus struct {
@@ -224,6 +226,9 @@ func runLuaScript(filename string, jsonData map[string]interface{}) (string, err
 func main() {
 	router := gin.Default()
 
+	router.Use(CORSMiddleware())
+	router.Use(loggingMiddleware())
+
 	// Middlewares
 	router.Use(static.Serve("/", static.LocalFile("./public", true)))
 	router.Use(gin.BasicAuth(gin.Accounts{
@@ -239,6 +244,29 @@ func main() {
 			return
 		}
 		c.Next()
+	})
+
+	router.GET("/status/:id", func(c *gin.Context) {
+		// Get id from the URL
+		id := c.Param("id")
+
+		status, ok := scriptStatuses[id]
+		if !ok {
+			c.JSON(http.StatusNotFound, gin.H{"error": "script not found"})
+			return
+		}
+
+		// Note: You need to be careful about concurrently reading/writing to the script status.
+		// Consider adding a mutex lock or similar for thread safety.
+		if status.Finished {
+			c.JSON(http.StatusOK, gin.H{
+				"finished": true,
+				"result":   status.Result,
+				"error":    status.Error,
+			})
+		} else {
+			c.JSON(http.StatusOK, gin.H{"finished": false})
+		}
 	})
 
 	router.POST("/runLuaFileAsync/:filename", func(c *gin.Context) {
@@ -311,4 +339,40 @@ func main() {
 	})
 
 	router.Run() // listen and serve on 0.0.0.0:8080 (for windows "localhost:8080")
+}
+
+func loggingMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Start timer
+		startTime := time.Now()
+
+		// Process request
+		c.Next()
+
+		// Log request details
+		endTime := time.Now()
+		log.Printf("[%s] %s %s %s %s",
+			endTime.Format(time.RFC3339),
+			c.Request.Method,
+			c.Request.URL,
+			c.ClientIP(),
+			endTime.Sub(startTime),
+		)
+	}
+}
+
+func CORSMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT")
+
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+
+		c.Next()
+	}
 }
