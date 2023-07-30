@@ -1,6 +1,6 @@
 # golang-gin-lua
 
-## This is a simple golang webserver using gin that invokes lua scripts.
+## This is a simple golang webserver using gin that invokes lua scripts.  This repo is for educational usage currently.
 
 ### Testing
 ```
