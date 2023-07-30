@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/contrib/static"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/yuin/gopher-lua"
 	"golang.org/x/time/rate"
 
@@ -13,6 +14,14 @@ import (
 	"path/filepath"
 	"sync"
 )
+
+type ScriptStatus struct {
+	Finished bool
+	Result   string
+	Error    error
+}
+
+var scriptStatuses = make(map[string]*ScriptStatus)
 
 // Cache for Lua scripts
 var scriptCache = make(map[string]string)
@@ -124,6 +133,47 @@ func main() {
 			return
 		}
 		c.Next()
+	})
+
+	router.POST("/runLuaFileAsync/:filename", func(c *gin.Context) {
+		// Get filename from the URL
+		filename := c.Param("filename")
+
+		// Check if filename is safe
+		if filepath.Base(filename) != filename {
+			c.String(http.StatusBadRequest, "Invalid filename")
+			return
+		}
+
+		// Parse JSON from request body
+		var jsonData map[string]interface{}
+		err := c.ShouldBindJSON(&jsonData)
+		if err != nil {
+			c.String(http.StatusBadRequest, "Invalid JSON")
+			return
+		}
+
+		// Generate a unique ID for this script execution
+		id := uuid.New().String()
+
+		// Create a new ScriptStatus
+		scriptStatuses[id] = &ScriptStatus{
+			Finished: false,
+		}
+
+		// Start a goroutine to run the script
+		go func() {
+			result, err := runLuaScript(filename, jsonData)
+			// Update the status when the script is done
+			scriptStatuses[id].Finished = true
+			scriptStatuses[id].Result = result
+			if err != nil {
+				scriptStatuses[id].Error = err
+			}
+		}()
+
+		// Return the ID to the client
+		c.String(http.StatusOK, id)
 	})
 
 	router.POST("/runLuaFile/:filename", func(c *gin.Context) {
